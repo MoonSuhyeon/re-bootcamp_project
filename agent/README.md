@@ -131,6 +131,40 @@ pytest                                     # 전체 테스트
 사용 가능한 케이스: `case_h1`(보이스피싱 조직) · `case_h2`(계정탈취) · `case_h5`(정상)
 · `case_death`(사망계좌 → 조사 중 fail-closed 즉시 종료).
 
+### 실제 출력 — `case_h2` (계정탈취, 실연동)
+
+```text
+$ python scripts/run_investigation.py --case case_h2
+
+        초기 분포 (균등)
+H1 보이스피싱 0.20 █████   H2 계정탈취 0.20 █████   H3 자금세탁 0.20 █████  …
+
+── 루프 1 · 예산 5 남음 ──────────────────────────────
+선택 도구: get_device_fingerprint
+이유   : H1·H2가 상위 — device로 H1/H2 구분
+결과   : 낯선 기기(DEV-NEW-99, 최초사용) → H2쪽
+  H2_ACCOUNT_TAKEOVER 0.59 ██████████████   (H1·H3·H4·H5 닫힘)
+게이트 : 경합 → 루프백(재계획)
+
+── 루프 2 · 예산 4 남음 ──────────────────────────────
+선택 도구: get_auth_events
+이유   : device=낯선기기 → H2 강화, 인증 이력으로 H2(계정탈취) 확인
+결과   : 인증실패 7회 → H2(계정탈취) 신호   ← 실 customer-service(:8081) 데이터
+  H2_ACCOUNT_TAKEOVER 0.91 ██████████████████████
+게이트 : 종료 → 권고
+
+┌─ 권고 ───────────────────────────────────────────────
+│ 최종 가설 : H2_ACCOUNT_TAKEOVER · CONFIRMED · 책임등급 L2
+│ 근거 사슬 : device(낯선) → auth(실패 7회), 2단계
+│ 권고 동작 : ESCALATE — 권한 하자, 분석가 확인
+│ ▶ 분석가 승인 대기 (HITL) — 에이전트는 권고까지만
+└──────────────────────────────────────────────────────
+```
+
+> 5개 가설이 균등에서 출발해 **도구를 이유와 함께 골라** 증거로 재계산되고, 확정되면
+> 종료한다. `case_death`는 `get_party`에서 사망 확인 → 즉시 fail-closed, 헤드라인은
+> "사망계좌 · 권리자 적격성(L4)"(경합 가설이 아니라 결정적 사실).
+
 ## 어드민 콘솔 연동 (HTTP API)
 
 CLI 와 **동일한 조사 루프**를 FastAPI 사이드카로 노출해 Next.js 어드민 콘솔
@@ -147,6 +181,16 @@ python scripts/serve.py                  # 기본 0.0.0.0:8090 (FRAUD_AGENT_PORT
 `web/admin/fraud` 페이지에서 `NEXT_PUBLIC_FRAUD_AGENT_URL`(기본 `http://localhost:8090`)로
 이 서버를 가리킨다 — 큐 선택 → 단계별 트레이스/분포 막대 → 권고 → 분석가 승인까지
 한 화면에서. 동작은 여전히 **HITL 승인 + RBAC(FRAUD_OFFICER) 통과 시에만** 실행(목).
+
+### 화면 (어드민 콘솔 `web/admin/fraud` — 팀 프로젝트 통합)
+
+| 조사 큐 | 계정탈취 (실연동) | 사망 fail-closed |
+|---|---|---|
+| ![조사 큐](docs/demo/console_queue.png) | ![계정탈취 실연동](docs/demo/console_case_h2_realconn.png) | ![사망 fail-closed](docs/demo/console_case_death_failclosed.png) |
+
+- **계정탈취**: `get_auth_events`가 **실 customer-service(:8081)** 호출 → `● 실연결` 배지 + 인증실패 7회 → H2 확정
+- **사망**: `get_party` 사망 확인 → 즉시 fail-closed, 헤드라인 "사망계좌 · 권리자 적격성(L4)"
+- **전체 흐름 영상**(큐 선택 → 트레이스 → 권고, 4개 사건): [`docs/demo/fraud_agent_demo.webm`](docs/demo/fraud_agent_demo.webm)
 
 ## 기술 스택
 
