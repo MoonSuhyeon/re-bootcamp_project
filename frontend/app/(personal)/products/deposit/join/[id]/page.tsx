@@ -1,169 +1,185 @@
 'use client'
+import { KB_PRIMARY } from '@/lib/theme'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { createPortal } from 'react-dom'
-import { useParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import DepositSidebar from '@/components/products/DepositSidebar'
+import AutoBreadcrumb from '@/components/layout/AutoBreadcrumb'
+import { createDepositContract, getCurrentDepositCustomerId, fetchDepositAccountViewModels, fetchDepositProduct, DepositViewAccount } from '@/lib/deposit-api'
+import { formatNumber } from '@/lib/mock-data'
+import MouseNumKeypad from '@/components/ui/MouseNumKeypad'
+
+const SESSION_EXTENSION_MS = 10 * 60 * 1000
+
+function extendLocalSessionAfterAuthenticatedAction() {
+  const token = localStorage.getItem('accessToken') || localStorage.getItem('access_token')
+  if (!token) return
+  localStorage.setItem('sessionExpiry', String(Date.now() + SESSION_EXTENSION_MS))
+}
 
 const PRODUCT_NAMES: Record<string, string> = {
+  // 예금
   'axful-regular': 'AXful 정기예금',
   'axful-super': 'AXful 수퍼정기예금(개인)',
   'regular': '일반정기예금',
   'axful-youth': 'AXful 청년도약계좌',
+  // 자유적금
+  'axful-free': 'AXful 내맘대로적금',
+  'axful-dollar': 'AXful 달러자적금',
+  'axful-green': 'AXful 맑은하늘적금',
+  'axful-star-savings': 'AXful 특★한 적금',
+  // 정기적금
+  'axful-soldier': 'AXful 장병내일준비적금',
+  'axful-work': 'AXful 직장인우대적금',
+  'axful-dream': 'AXful 꿈적금',
+  'axful-together': 'AXful 함께적금',
+  // 입출금자유
+  'axful-free-account': 'AXful 자유입출금통장',
+  'axful-youth-account': 'AXful 청년우대통장',
+  'axful-sok': 'AXful 쏙머니통장',
+  'monimo-daily': '모니모 AXful 매일이자 통장',
+  // 주택청약
+  'housing-savings': '주택청약종합저축',
+  'youth-housing': '청년 주택드림 청약통장',
 }
 
-const MATURITY_OPTIONS = ['자동재예치(원금+이자)', '자동재예치(원금)', '자동해지']
+// 적금 상품 ID (전체)
+const SAVINGS_IDS = new Set([
+  'axful-free', 'axful-dollar', 'axful-green', 'axful-soldier', 'axful-star-savings',
+  'axful-work', 'axful-dream', 'axful-together',
+])
+// 자유적금 ID (납입 자유)
+const FREE_SAVINGS_IDS = new Set([
+  'axful-free', 'axful-dollar', 'axful-green', 'axful-star-savings',
+])
+// 정기적금 ID (월 고정 납입)
+const REGULAR_SAVINGS_IDS = new Set([
+  'axful-soldier', 'axful-work', 'axful-dream', 'axful-together',
+])
 
-const TERM_DOCS = [
-  { key: 'term1', label: '예금거래기본약관' },
-  { key: 'term2', label: '거치식예금약관' },
-  { key: 'term3', label: 'AXful Star 정기예금 특약' },
-  { key: 'term4', label: 'AXful Star 정기예금 상품설명서' },
-]
+const HOUSING_IDS = new Set([
+  'housing-savings', 'youth-housing',
+])
 
-const PRIOR_TABS = ['기본이율', '우대이율', '중도해지이율', '만기후이율']
+const CHECKING_IDS = new Set([
+  'axful-free-account', 'axful-youth-account', 'axful-sok', 'monimo-daily',
+  'axful-living', 'axful-gs', 'axful-moim', 'axful-star-account', 'axful-wallet', 'election',
+])
 
-const BASIC_RATES = [
-  { period: '1개월이상 ~ 3개월미만', base: '1.80', cust: '2.45' },
-  { period: '3개월이상 ~ 6개월미만', base: '2.00', cust: '2.75' },
-  { period: '6개월이상 ~ 9개월미만', base: '2.10', cust: '2.85' },
-  { period: '9개월이상 ~ 12개월미만', base: '2.10', cust: '2.85' },
-  { period: '12개월이상 ~ 24개월미만', base: '2.15', cust: '2.9' },
-  { period: '24개월이상 ~ 36개월미만', base: '2.20', cust: '2.4' },
-  { period: '36개월', base: '2.20', cust: '2.4' },
-]
-
-const EARLY_RATES = [
-  { period: '1개월미만', rate: '0.1' },
-  { period: '1개월이상 ~ 3개월미만', rate: '기본이율 x 50% x 경과월수/계약월수(단, 최저금리 0.1)' },
-  { period: '3개월이상 ~ 6개월미만', rate: '기본이율 x 50% x 경과월수/계약월수(단, 최저금리 0.1)' },
-  { period: '6개월이상 ~ 8개월미만', rate: '기본이율 x 60% x 경과월수/계약월수(단, 최저금리 0.2)' },
-  { period: '8개월이상 ~ 10개월미만', rate: '기본이율 x 70% x 경과월수/계약월수(단, 최저금리 0.2)' },
-  { period: '10개월이상 ~ 11개월미만', rate: '기본이율 x 80% x 경과월수/계약월수(단, 최저금리 0.2)' },
-  { period: '11개월이상', rate: '기본이율 x 90% x 경과월수/계약월수(단, 최저금리 0.2)' },
-]
-
-const MATURITY_RATES = [
-  { period: '만기후 1개월이내', rate: '기본이율 x 50%' },
-  { period: '만기후 1개월초과 ~ 3개월 이내', rate: '기본이율 x 30%' },
-  { period: '만기후 3개월초과', rate: '0.1' },
-]
-
-const TERM_CONTENT: Record<string, { title: string; body: React.ReactNode }> = {
-  term1: {
-    title: '예금거래기본약관',
-    body: (
-      <div className="text-[13px] text-kb-text-body leading-relaxed space-y-3 p-5 overflow-y-auto">
-        <p className="font-bold text-center text-[15px] mb-4">예금거래기본약관</p>
-        <h3 className="font-bold">제1조(적용범위)</h3>
-        <p>이 약관은 입출금이 자유로운 예금, 거치식예금, 적립식예금 거래에 적용합니다.</p>
-        <h3 className="font-bold">제2조(실명거래)</h3>
-        <p>① 거래처는 실명으로 거래하여야 합니다.<br />② 은행은 거래처의 실명확인을 위하여 주민등록증·사업자등록증 등 실명확인증표 또는 그 밖에 필요한 서류의 제시나 제출을 요구할 수 있고, 거래처는 이에 따라야 합니다.</p>
-        <h3 className="font-bold">제3조(거래장소)</h3>
-        <p>거래처는 예금계좌를 개설한 영업점(이하 "개설점"이라 합니다)에서 모든 예금거래를 합니다. 다만, 은행이 정하는 바에 따라 다른 영업점이나 다른 금융기관, 또는 현금자동출금기·현금자동입출금기·컴퓨터·전화기 등(이하 "전산통신기기"라 합니다)을 통해 거래할 수 있습니다.</p>
-        <h3 className="font-bold">제4조(거래방법)</h3>
-        <p>거래처는 은행에서 내준 통장(증서, 전자통장을 포함합니다, 이하 같습니다.) 또는 수표·어음 용지로 거래하여야 합니다. 그러나 입금할 때와, 자동이체약정·전산통신기기·바이오인증 이용약정에 따라 거래하는 경우 및 기 등록된 생체정보(이하 "바이오정보"), 실명확인증표 등을 통해 본인확인된 경우에는 통장 없이(이하 "무통장")도 거래할 수 있습니다.</p>
-      </div>
-    ),
-  },
-  term2: {
-    title: '거치식예금 약관',
-    body: (
-      <div className="text-[13px] text-kb-text-body leading-relaxed space-y-3 p-5 overflow-y-auto">
-        <p className="font-bold text-center text-[15px] mb-4">거치식예금 약관</p>
-        <h3 className="font-bold">제 1 조 적용범위</h3>
-        <p>① 거치식예금(이하 '이 예금'이라 합니다)이란 예치기간을 정하고 거래를 시작할 때 맡긴 돈을 만기에 찾는 예금을 말합니다.<br />② 이 약관에서 정하지 아니한 사항은 예금거래기본약관의 규정을 적용합니다.<br />③ 양도성예금증서 및 표지어음의 거래에는 이 약관을 적용합니다.</p>
-        <h3 className="font-bold">제 2 조 지급시기</h3>
-        <p>이 예금은 약정한 만기일 이후 거래처가 청구할 때 지급합니다. 다만, 거래처가 부득이한 사정으로 청구할 때에는 만기일이라도 지급할 수 있습니다.</p>
-        <h3 className="font-bold">제 3 조 이자</h3>
-        <p>① 이 예금의 이자는 약정한 예치기간에 따라 예금일 당시 영업점에 게시한 예치기간별 이율로 셈하여 만기일 이후 원금과 함께 지급합니다. 그러나 거래처의 요청이 있으면 월별로 이자를 지급할 수 있습니다.<br />② 만기일 후 지급 청구할 때는 만기일로부터 지급일 전날까지의 기간에 대해 예금일 당시 영업점에 게시한 만기후이율로 셈한 이자를 더하여 지급합니다.</p>
-        <p className="text-[11px] text-kb-text-muted mt-2">이 약관은 2017년 6월 30일 이후부터 적용합니다.</p>
-        <p className="text-[11px] text-kb-text-muted">이 약관은 2020년 10월 8일 이후부터 적용합니다.</p>
-        <p className="border border-kb-border px-3 py-2 text-[12px] mt-2">본 약관은 법령 및 내부통제기준에 따른 절차를 거쳐서 제공됩니다.</p>
-      </div>
-    ),
-  },
-  term3: {
-    title: '「AXful Star 정기예금」특약',
-    body: (
-      <div className="text-[13px] text-kb-text-body leading-relaxed space-y-3 p-5 overflow-y-auto">
-        <p className="font-bold text-center text-[15px] mb-4">「AXful Star 정기예금」특약</p>
-        <h3 className="font-bold">제 1 조 적용범위</h3>
-        <p>AXful Star 정기예금(이하 '이 예금'이라 합니다)거래는 이 특약을 적용하며, 이 특약에서 정하지 않은 사항은 예금거래기본약관 및 거치식예금약관을 적용합니다.</p>
-        <h3 className="font-bold">제 2 조 거래방법</h3>
-        <p>① 이 예금은 인터넷뱅킹, AX 스타뱅킹, 콜센터를 통해서만 신규 가입이 가능합니다.<br />② 이 예금은 인터넷뱅킹, AX 스타뱅킹, 영업점 창구를 통해서만 해지가 가능합니다.</p>
-        <h3 className="font-bold">제 3 조 가입대상</h3>
-        <p>이 예금의 가입자는 개인 및 개인사업자로 합니다.</p>
-        <h3 className="font-bold">제 4 조 계정과목</h3>
-        <p>이 예금의 계정과목은 정기예금으로 합니다.</p>
-        <h3 className="font-bold">제 5 조 계약기간</h3>
-        <p>이 예금의 계약기간은 1개월 이상 36개월 이내의 월단위로 합니다.</p>
-        <h3 className="font-bold">제 6 조 저축방법</h3>
-        <p>이 예금은 신규 시 1백만원 이상을 예치하여야 합니다.</p>
-        <h3 className="font-bold">제 7 조 이율의 적용</h3>
-        <p>① 이 예금의 이율은 신규 및 자동재예치 시 인터넷 홈페이지(www.axful.com) 및 영업점에 게시된 이율을 적용 합니다.</p>
-      </div>
-    ),
-  },
-  term4: {
-    title: '「AXful Star 정기예금」상품설명서',
-    body: (
-      <div className="text-[13px] text-kb-text-body leading-relaxed space-y-3 p-5 overflow-y-auto">
-        <p className="font-bold text-center text-[15px] mb-2">「AXful Star 정기예금」상품설명서</p>
-        <p className="text-[11px] text-kb-text-muted text-center mb-4">준법감시인 심의필 제2025-2226-12호(유효기간: 2025.06.09 ~ 2027.05.31)</p>
-        <div className="bg-[#FFF9E6] border border-[#C09B3A] p-3 text-[12px] space-y-1">
-          <p>◈ 이 설명서는 금융소비자의 권익 보호 및 예금상품에 대한 이해 증진을 위하여 작성된 자료입니다.</p>
-          <p>◈ 설명내용을 제대로 이해하지 못하였음에도 불구하고 설명을 이해했다는 서명을 하거나 녹취기록을 남기는 경우, 추후 해당 내용과 관련한 <span className="text-[#E05555]">권리구제가 어려울 수 있습니다.</span></p>
-        </div>
-        <h3 className="font-bold text-[14px] mt-2">1 상품 개요 및 특징</h3>
-        <p>상품명: AXful Star 정기예금<br />상품특징: 인터넷뱅킹 등 비대면채널을 통해서만 가입 가능한 온라인 전용 정기예금</p>
-        <h3 className="font-bold text-[14px]">2 거래 조건</h3>
-        <table className="w-full border border-kb-border text-[12px]">
-          <tbody className="divide-y divide-kb-border">
-            {[['가입자격','개인 및 개인사업자'],['상품유형','정기예금'],['가입금액','1백만원이상(추가입금 불가)'],['가입기간','1개월 이상 36개월 이하(월 단위)']].map(([l,v]) => (
-              <tr key={l}>
-                <td className="bg-[#F5F5F5] px-3 py-2 font-medium w-28 border-r border-kb-border">{l}</td>
-                <td className="px-3 py-2">{v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="text-[11px] text-kb-text-muted">※ 이 상품은 예금자보호법에 따라 예금보험공사가 보호하되, 보호 한도는 본 은행에 있는 귀하의 모든 예금보호대상 금융상품의 원금과 소정의 이자를 합하여 1인당 "최고 5천만원"이며, 5천만원을 초과하는 나머지 금액은 보호하지 않습니다.</p>
-      </div>
-    ),
-  },
+// 적금별 가입기간 범위
+const SAVINGS_PERIOD_RANGE: Record<string, { min: number; max: number; label: string }> = {
+  'axful-free':         { min: 6,  max: 36, label: '6~36개월, 월단위' },
+  'axful-dollar':       { min: 6,  max: 6,  label: '6개월 고정' },
+  'axful-green':        { min: 6,  max: 36, label: '6~36개월, 월단위' },
+  'axful-soldier':      { min: 24, max: 24, label: '24개월 고정' },
+  'axful-work':         { min: 12, max: 36, label: '12~36개월, 월단위' },
+  'axful-dream':        { min: 12, max: 36, label: '12~36개월, 월단위' },
+  'axful-together':     { min: 6,  max: 24, label: '6~24개월, 월단위' },
+  'axful-star-savings': { min: 1,  max: 12, label: '1~12개월, 월단위' },
 }
 
-function SquareCheck({ checked }: { checked: boolean }) {
+const PRODUCT_RATES: Record<string, string> = {
+  'axful-regular':       '연 2.4%',
+  'axful-super':         '연 2.2%',
+  'regular':             '연 2.25%',
+  'axful-youth':         '연 3.5%',
+  'axful-free':          '연 2.95%',
+  'axful-dollar':        '연 1.0%',
+  'axful-green':         '연 2.85%',
+  'axful-star-savings':  '연 2.0%',
+  'axful-soldier':       '연 5.0% + 우대 최대 5.5%',
+  'axful-work':          '연 3.2% + 우대 최대 1.3%',
+  'axful-dream':         '연 3.0% + 우대 최대 1.2%',
+  'axful-together':      '연 2.8% + 우대 최대 1.2%',
+  'axful-youth-account': '연 2.0%',
+  'axful-sok':           '연 1.5%',
+  'monimo-daily':        '연 2.5% (일 복리)',
+  'housing-savings':     '연 3.1%',
+  'youth-housing':       '연 3.1% + 우대 최대 1.4%',
+}
+
+const TERMS_BY_TYPE: Record<string, string[]> = {
+  deposit: [
+    '예금거래기본약관',
+    '거치식예금약관',
+    'AXful Star 정기예금 특약',
+    'AXful Star 정기예금 상품설명서',
+  ],
+  savings: [
+    '예금거래기본약관',
+    '적립식예금약관',
+    'AXful 적금 특약',
+    'AXful 적금 상품설명서',
+  ],
+  checking: [
+    '예금거래기본약관',
+    '보통예금약관',
+    'AXful 입출금통장 상품설명서',
+  ],
+  housing: [
+    '예금거래기본약관',
+    '주택청약종합저축약관',
+    '주택청약종합저축 상품설명서',
+  ],
+}
+
+const MATURITY_OPTIONS = [
+  '자동재예치(원금+이자)',
+  '자동재예치(원금)',
+  '자동해지',
+]
+
+/* ─── 아코디언 아이템 ─── */
+function AccItem({ title, required, checked, onCheck, children, defaultOpen = false }: {
+  title: string; required?: boolean; checked?: boolean; onCheck?: (v: boolean) => void
+  children: React.ReactNode; defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-      checked ? 'border-[#5BC9A8] bg-[#5BC9A8]' : 'border-kb-border bg-white'
-    }`}>
-      {checked && (
-        <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3">
-          <polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      )}
+    <div className="border-b border-kb-border">
+      <div className="flex items-center w-full px-4 py-3 gap-3">
+        {required && onCheck !== undefined && (
+          <input
+            type="checkbox"
+            checked={!!checked}
+            onChange={e => onCheck(e.target.checked)}
+            className="w-4 h-4 flex-shrink-0 accent-kb-primary cursor-pointer"
+          />
+        )}
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="flex items-center justify-between flex-1 hover:opacity-80 transition-opacity text-left">
+          <span className="flex items-center gap-2 text-[13px]">
+            <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 flex-shrink-0">
+              <circle cx="10" cy="10" r="9" stroke="#0D5C47" strokeWidth="1.5"/>
+              <polyline points="6,10 9,13 14,7" stroke="#0D5C47" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {required && <span className="text-[11px] font-bold text-kb-primary border border-kb-primary px-1.5 py-0.5 rounded-sm">필수</span>}
+            <span className="font-semibold text-kb-text">{title}</span>
+          </span>
+          <span className="text-kb-text-muted text-xs ml-2">{open ? '∧' : '›'}</span>
+        </button>
+      </div>
+      {open && <div className="px-6 py-3 bg-[#FAFAFA] text-[12px] text-kb-text-body leading-relaxed">{children}</div>}
     </div>
   )
 }
 
-
-function ConfirmBtn({ onClick, label }: { onClick: () => void; label: string }) {
+/* ─── 섹션 헤더 ─── */
+function SectionHeader({ title }: { title: string }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-2 bg-kb-yellow px-8 py-2 text-[13px] font-bold text-kb-text hover:bg-kb-yellow-dark transition-colors"
-    >
-      <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4">
-        <polyline points="3,8 6.5,11.5 13,5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <div className="flex items-center gap-2 bg-[#F5F5F5] border border-kb-border px-4 py-3 mb-0">
+      <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 flex-shrink-0">
+        <circle cx="10" cy="10" r="9" stroke="#0D5C47" strokeWidth="1.5"/>
+        <polyline points="6,10 9,13 14,7" stroke="#0D5C47" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
-      {label}
-    </button>
+      <span className="text-[13px] font-bold text-kb-text">{title}</span>
+    </div>
   )
 }
 
+/* ─── 정보입력 행 ─── */
 function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="border-b border-kb-border py-4">
@@ -175,21 +191,80 @@ function FormRow({ label, children }: { label: string; children: React.ReactNode
 
 export default function DepositJoinPage() {
   const params = useParams()
+  const router = useRouter()
   const id = typeof params.id === 'string' ? params.id : 'axful-regular'
-  const productName = PRODUCT_NAMES[id] ?? 'AXful 정기예금'
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  // product-{n} 슬러그는 API로 상품 정보를 조회해 타입을 결정
+  const numericIdMatch = id.match(/^product-(\d+)$/)
+  const [apiProductName, setApiProductName] = useState<string | null>(null)
+  const [apiIsChecking, setApiIsChecking] = useState<boolean | null>(null)
+  const [apiIsSavings, setApiIsSavings] = useState<boolean | null>(null)
+  const [apiIsHousing, setApiIsHousing] = useState<boolean | null>(null)
+  const [apiIsFreeStyleSavings, setApiIsFreeStyleSavings] = useState<boolean | null>(null)
+  const [apiIsRegularSavings, setApiIsRegularSavings] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    if (!numericIdMatch) return
+    const productId = parseInt(numericIdMatch[1], 10)
+    fetchDepositProduct(productId).then(product => {
+      setApiProductName(product.productName)
+      const savings = product.productType === 'SAVINGS'
+      const housing = product.productType === 'SUBSCRIPTION'
+      const checking = !savings && !housing && product.productName.includes('통장')
+      setApiIsSavings(savings)
+      setApiIsHousing(housing)
+      setApiIsChecking(checking)
+      setApiIsFreeStyleSavings(savings && product.savingType === 'FREE')
+      setApiIsRegularSavings(savings && product.savingType === 'REGULAR')
+    }).catch(() => { /* 조회 실패 시 정기예금으로 fallback */ })
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const productName = apiProductName ?? (PRODUCT_NAMES[id] ?? 'AXful 정기예금')
+  const isSavings = apiIsSavings ?? SAVINGS_IDS.has(id)
+  const isHousing = apiIsHousing ?? HOUSING_IDS.has(id)
+  const isChecking = apiIsChecking ?? CHECKING_IDS.has(id)
+  const terms = isChecking ? TERMS_BY_TYPE.checking
+    : isHousing ? TERMS_BY_TYPE.housing
+    : isSavings ? TERMS_BY_TYPE.savings
+    : TERMS_BY_TYPE.deposit
+  const isFreeStyleSavings = apiIsFreeStyleSavings ?? FREE_SAVINGS_IDS.has(id)
+  const isRegularSavings   = apiIsRegularSavings ?? REGULAR_SAVINGS_IDS.has(id)
+  const periodRange = isSavings ? (SAVINGS_PERIOD_RANGE[id] ?? { min: 1, max: 36, label: '1~36개월, 월단위' }) : { min: 1, max: 36, label: '1~36개월, 월단위' }
+
+  const [step, setStep] = useState<1 | 2 | 3>(1)
 
   /* ─── Step 1 state ─── */
-  const [checked, setChecked] = useState<Record<string, boolean>>({})
-  const [openModal, setOpenModal] = useState<string | null>(null)
-  const [seqIdx, setSeqIdx] = useState<number | null>(null)
-  const [priorTab, setPriorTab] = useState(0)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [finalCheck, setFinalCheck] = useState(false)
+  const REQUIRED_KEYS = ['illegal', 'protection', 'priority', 'burden', 'product', 'final'] as const
+  type TermKey = typeof REQUIRED_KEYS[number]
+  const [termChecks, setTermChecks] = useState<Record<TermKey, boolean>>({
+    illegal: false, protection: false, priority: false, burden: false, product: false, final: false,
+  })
+  const allRequiredChecked = REQUIRED_KEYS.every(k => termChecks[k])
+
+  function checkTerm(key: TermKey, val: boolean) {
+    setTermChecks(prev => ({ ...prev, [key]: val }))
+  }
+  function checkAll(val: boolean) {
+    setTermChecks({ illegal: val, protection: val, priority: val, burden: val, product: val, final: val })
+  }
+
+  /* ─── 군인 인증 state (장병내일준비적금 전용) ─── */
+  const [militaryBranch, setMilitaryBranch] = useState('')
+  const [militaryId, setMilitaryId] = useState('')
+  const [enlistDate, setEnlistDate] = useState('')
+  const [dischargeDate, setDischargeDate] = useState('')
+
+  /* ─── 자동이체 state (정기적금 전용) ─── */
+  const [autoTransfer, setAutoTransfer] = useState<'yes' | 'no' | null>(null)
+  const [transferDay, setTransferDay] = useState('')
+  const [transferAccount, setTransferAccount] = useState('')
 
   /* ─── Step 2 state ─── */
-  const [period, setPeriod] = useState('')
+  const [period, setPeriod] = useState(() => {
+    // 기간이 고정된 적금은 기본값 설정
+    const r = isSavings ? (SAVINGS_PERIOD_RANGE[id] ?? null) : null
+    return (r && r.min === r.max) ? String(r.min) : ''
+  })
   const [periodPreset, setPeriodPreset] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
   const [couponType, setCouponType] = useState<'coupon' | 'point' | 'none'>('none')
@@ -199,19 +274,34 @@ export default function DepositJoinPage() {
   const [lms, setLms] = useState<'yes' | 'no' | null>(null)
   const [docMethod, setDocMethod] = useState<'email' | 'lms' | null>(null)
 
+
   /* ─── Step 3 state ─── */
   const [confirmPw, setConfirmPw] = useState('')
   const [mouseInput, setMouseInput] = useState(false)
+  const [mouseConfirmPw, setMouseConfirmPw] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const STEP_LABELS = ['약관동의', '정보입력', '정보확인', '완료']
+  /* ─── 출금계좌(funding) — 본인 입출금 계좌 실데이터 연동 ─── */
+  const [withdrawAccounts, setWithdrawAccounts] = useState<DepositViewAccount[]>([])
+  const [withdrawAccount, setWithdrawAccount] = useState('')
 
-  function mark(key: string) { setChecked(prev => ({ ...prev, [key]: true })) }
-  function toggleExpand(key: string) { setExpanded(prev => ({ ...prev, [key]: !prev[key] })) }
+  useEffect(() => {
+    let active = true
+    fetchDepositAccountViewModels(getCurrentDepositCustomerId())
+      .then(accs => {
+        if (!active) return
+        const transferable = accs.filter(a => a.type === '입출금')
+        setWithdrawAccounts(transferable)
+        if (transferable.length > 0) {
+          setWithdrawAccount(prev => prev || transferable[0].id)
+          setTransferAccount(prev => prev || transferable[0].id)
+        }
+      })
+      .catch(() => { if (active) setWithdrawAccounts([]) })
+    return () => { active = false }
+  }, [])
 
-  function handleInfoGroupClick() {
-    const allOn = checked.info_group && checked.illegal && checked.deposit_protect
-    setChecked(prev => ({ ...prev, info_group: !allOn, illegal: !allOn, deposit_protect: !allOn }))
-  }
+  const STEP_LABELS = ['약관동의', '정보입력', '정보확인']
 
   function addAmount(val: number) {
     const cur = parseInt(amount.replace(/,/g, '') || '0')
@@ -219,19 +309,76 @@ export default function DepositJoinPage() {
   }
 
   function handleStep1Next() {
-    if (!finalCheck) { alert('필수 약관에 모두 동의해 주세요.'); return }
+    if (!allRequiredChecked) { alert('필수 약관에 모두 동의해 주세요.'); return }
     setStep(2)
   }
+
   function handleStep2Next() {
-    const m = parseInt(period)
-    if (!m || m < 1 || m > 36) { alert('가입기간을 올바르게 입력해주세요. (1~36개월)'); return }
+    if (id === 'axful-soldier') {
+      if (!militaryBranch) { alert('군종을 선택해주세요.'); return }
+      if (!militaryId.trim()) { alert('군번을 입력해주세요.'); return }
+      if (!enlistDate) { alert('입대일을 입력해주세요.'); return }
+      if (!dischargeDate) { alert('전역예정일을 입력해주세요.'); return }
+    }
+    if (!isChecking) {
+      const m = parseInt(period)
+      if (!m || m < periodRange.min || m > periodRange.max) {
+        alert(`가입기간을 올바르게 입력해주세요. (${periodRange.label})`)
+        return
+      }
+    }
+    if (isRegularSavings) {
+      if (autoTransfer === null) { alert('자동이체 여부를 선택해주세요.'); return }
+      const a = parseInt(amount.replace(/,/g, ''))
+      if (!a || a < 10000) { alert('납입금액은 최소 1만원 이상이어야 합니다.'); return }
+      if (autoTransfer === 'yes') {
+        if (!transferDay) { alert('자동이체일을 선택해주세요.'); return }
+        if (!transferAccount) { alert('자동이체 출금계좌를 선택해주세요.'); return }
+      }
+      setStep(3)
+      return
+    }
     const a = parseInt(amount.replace(/,/g, ''))
-    if (!a || a < 1000000) { alert('가입금액은 최소 100만원 이상이어야 합니다.'); return }
+    if (isSavings || isHousing) {
+      if (!a || a < 10000) { alert('납입금액은 최소 1만원 이상이어야 합니다.'); return }
+    } else if (!isChecking && (!a || a < 1000000)) {
+      alert('가입금액은 최소 100만원 이상이어야 합니다.')
+      return
+    }
     setStep(3)
   }
-  function handleFinalConfirm() {
-    if (!confirmPw && !mouseInput) { alert('계좌 비밀번호를 입력해주세요.'); return }
-    setStep(4)
+
+  async function handleFinalConfirm() {
+    if (submitting) return
+    const pw = mouseInput ? mouseConfirmPw : confirmPw
+    if (!pw) { alert('계좌 비밀번호를 입력해주세요.'); return }
+    setSubmitting(true)
+
+    try {
+      const customerId = getCurrentDepositCustomerId()
+      await createDepositContract(customerId, {
+        slug: id,
+        productName,
+        amount: parseInt(amount.replace(/,/g, '')) || 0,
+        periodMonth: parseInt(period) || 1,
+        accountPassword: confirmPw || '0000',
+        isSavings,
+        isHousing,
+        isChecking,
+        isRegularSavings,
+        autoTransferEnabled: autoTransfer === 'yes',
+        autoTransferDay: transferDay ? parseInt(transferDay) : undefined,
+        taxExempt,
+      })
+      extendLocalSessionAfterAuthenticatedAction()
+      localStorage.removeItem('joinedAccounts')
+      router.push('/inquiry/accounts')
+      router.refresh()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string; error?: string } }; message?: string }
+      alert(e.response?.data?.message || e.response?.data?.error || e.message || '가입 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
+      setSubmitting(false)
+    }
   }
 
   const months = parseInt(period) || 0
@@ -239,19 +386,13 @@ export default function DepositJoinPage() {
     ? new Date(2026, 5 - 1 + months, 25).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace(/\.$/, '')
     : '-'
 
-  const allTermsChecked = TERM_DOCS.every(t => checked[t.key])
-
   return (
-    <>
     <div className="max-w-kb-container mx-auto px-6 py-6">
-      <div className="flex justify-end mb-3 text-[12px] text-kb-text-muted gap-1 items-center">
-        <span>개인뱅킹</span><span>›</span>
-        <span>금융상품</span><span>›</span>
-        <span>예금</span><span>›</span>
-        <Link href="/products/deposit" className="hover:underline">예금 상품/가입</Link>
-        <span>›</span>
-        <Link href="#" className="text-kb-blue hover:underline">도움말</Link>
-      </div>
+      <AutoBreadcrumb
+        as="/products/deposit/list"
+        className="flex justify-end items-center mb-3 text-[12px] text-kb-text-muted gap-1"
+        trailing={<Link href="#" className="text-kb-blue hover:underline">도움말</Link>}
+      />
 
       <div className="flex gap-6">
         <DepositSidebar />
@@ -263,10 +404,12 @@ export default function DepositJoinPage() {
             <div className="flex gap-1">
               {STEP_LABELS.map((s, i) => (
                 <button key={s}
-                  className={`px-4 py-1.5 text-[12px] transition-colors ${
-                    i + 1 === step ? 'font-bold text-white' : 'text-kb-text-body border border-kb-border bg-white'
+                  className={`px-4 py-1.5 text-[12px] rounded-lg transition-colors ${
+                    i + 1 === step
+                      ? 'font-bold text-white'
+                      : 'text-kb-text-body border border-kb-border bg-white'
                   }`}
-                  style={i + 1 === step ? { backgroundColor: '#5BC9A8' } : {}}>
+                  style={i + 1 === step ? { backgroundColor: KB_PRIMARY } : {}}>
                   {i + 1}. {s}
                 </button>
               ))}
@@ -275,198 +418,101 @@ export default function DepositJoinPage() {
 
           {/* ══════════ STEP 1: 약관동의 ══════════ */}
           {step === 1 && (
-            <div>
+            <div className="space-y-0">
+
+              {/* 전체 동의 */}
+              <div className="border border-kb-border rounded-xl bg-kb-primary-bg px-5 py-4 mb-4 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="agreeAll"
+                  checked={allRequiredChecked}
+                  onChange={e => checkAll(e.target.checked)}
+                  className="w-5 h-5 accent-kb-primary cursor-pointer flex-shrink-0"
+                />
+                <label htmlFor="agreeAll" className="text-[14px] font-bold text-kb-text cursor-pointer">
+                  아래 약관 및 필수 항목에 전체 동의합니다.
+                </label>
+              </div>
+
               {/* 약관 및 상품설명서 */}
-              <div className="border border-kb-border mb-4">
-                {/* 섹션 헤더 */}
-                <div className="flex items-center justify-between bg-[#F5F5F5] border-b border-kb-border px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        const next: Record<string, boolean> = {}
-                        TERM_DOCS.forEach(d => { next[d.key] = !allTermsChecked })
-                        setChecked(prev => ({ ...prev, ...next }))
-                      }}
-                      className="p-0 leading-none"
-                    >
-                      <SquareCheck checked={allTermsChecked} />
-                    </button>
-                    <span className="text-[13px] font-bold text-kb-text">약관 및 상품설명서</span>
-                  </div>
-                  <button
-                    onClick={() => setSeqIdx(0)}
-                    className="text-[12px] text-kb-text-muted border border-kb-border px-3 py-1 hover:bg-kb-beige-light transition-colors"
-                  >
-                    전체약관보기
-                  </button>
-                </div>
-                {/* 각 약관 항목 */}
-                {TERM_DOCS.map(doc => (
-                  <div key={doc.key} className="flex items-center justify-between px-5 py-3 border-b border-kb-border last:border-b-0">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setChecked(prev => ({ ...prev, [doc.key]: !prev[doc.key] }))}
-                        className="p-0 leading-none"
-                      >
-                        <SquareCheck checked={!!checked[doc.key]} />
+              <div className="border border-kb-border rounded-xl overflow-hidden mb-4">
+                <SectionHeader title="약관 및 상품설명서" />
+                <div>
+                  <AccItem title="약관 열람">
+                    {terms.map(t => (
+                      <button key={t}
+                        className="flex items-center justify-between w-full py-2 border-b border-kb-border last:border-0 hover:text-kb-blue transition-colors">
+                        <span>{t}</span>
+                        <span className="text-xs text-kb-text-muted">›</span>
                       </button>
-                      <span className="text-[11px] font-bold text-[#5BC9A8] border border-[#5BC9A8] px-1.5 py-0.5 rounded-sm flex-shrink-0">필수</span>
-                      <span className="text-[13px] text-kb-text-body">{doc.label}</span>
-                    </div>
-                    <button
-                      onClick={() => setOpenModal(doc.key)}
-                      className="border border-kb-border px-3 py-1 text-[13px] text-kb-text-muted hover:bg-kb-beige-light transition-colors flex-shrink-0"
-                    >
-                      약관보기 ›
-                    </button>
-                  </div>
-                ))}
+                    ))}
+                  </AccItem>
+                </div>
               </div>
 
               {/* 확인 및 안내사항 */}
-              <div className="border border-kb-border mb-4">
-                {/* 섹션 헤더 — 클릭하면 하위 2개 동시 체크 */}
-                <button
-                  onClick={handleInfoGroupClick}
-                  className="flex items-center gap-2 bg-[#F5F5F5] border-b border-kb-border px-4 py-3 w-full hover:bg-[#eeeeee] transition-colors">
-                  <SquareCheck checked={!!checked.info_group} />
-                  <span className="text-[13px] font-bold text-kb-text">확인 및 안내사항</span>
-                </button>
-
-                {/* 불법탈법 */}
-                <div className="border-b border-kb-border">
-                  <button
-                    onClick={() => toggleExpand('illegal')}
-                    className="flex items-center justify-between w-full px-4 py-3 hover:bg-[#fafafa] transition-colors">
-                    <span className="flex items-center gap-2 text-[13px]">
-                      <span onClick={e => { e.stopPropagation(); setChecked(p => ({ ...p, illegal: !p.illegal })) }}>
-                        <SquareCheck checked={!!checked.illegal} />
-                      </span>
-                      <span className="text-[11px] font-bold text-[#5BC9A8] border border-[#5BC9A8] px-1.5 py-0.5 rounded-sm">필수</span>
-                      <span className="font-semibold text-kb-text">불법·탈법 차명거래 금지 설명 확인</span>
-                    </span>
-                    <span className="text-kb-text-muted text-xs">{expanded.illegal ? '∧' : '›'}</span>
-                  </button>
-                  {expanded.illegal && (
-                    <div className="px-6 py-3 bg-[#FAFAFA] text-[12px] text-kb-text-body leading-relaxed">
-                      「금융실명거래및 비밀보장에 관한법률」 제 3조 제3항에 따라 누구든지 불법재산의 은닉, 자금세탁행위, 공중협박자금조달 행위 및 강제집행의 면탈, 그 밖의 탈법행위를 목적으로 타인의 실명으로 금융거래를 해서는 아니되며, 이를 위반시 5년 이하의 징역 또는 5천만원 이하의 벌금에 처해질 수 있습니다.
-                    </div>
-                  )}
-                </div>
-
-                {/* 예금자보호법 */}
-                <div>
-                  <button
-                    onClick={() => toggleExpand('deposit_protect')}
-                    className="flex items-center justify-between w-full px-4 py-3 hover:bg-[#fafafa] transition-colors">
-                    <span className="flex items-center gap-2 text-[13px]">
-                      <span onClick={e => { e.stopPropagation(); setChecked(p => ({ ...p, deposit_protect: !p.deposit_protect })) }}>
-                        <SquareCheck checked={!!checked.deposit_protect} />
-                      </span>
-                      <span className="text-[11px] font-bold text-[#5BC9A8] border border-[#5BC9A8] px-1.5 py-0.5 rounded-sm">필수</span>
-                      <span className="font-semibold text-kb-text">예금자보호법 설명확인</span>
-                    </span>
-                    <span className="text-kb-text-muted text-xs">{expanded.deposit_protect ? '∧' : '›'}</span>
-                  </button>
-                  {expanded.deposit_protect && (
-                    <div className="px-6 py-3 bg-[#FAFAFA] text-[12px] text-kb-text-body leading-relaxed">
-                      본인은 AX풀뱅크로부터 가입하는 금융상품의 예금자보호여부(보호 또는 비보호) 및 보호한도에 대하여 설명 받고 이해하였음을 확인합니다.
-                    </div>
-                  )}
-                </div>
+              <div className="border border-kb-border rounded-xl overflow-hidden mb-4">
+                <SectionHeader title="확인 및 안내사항" />
+                <AccItem title="불법·탈법 자금거래 금지 설명 확인" required
+                  checked={termChecks.illegal} onCheck={v => checkTerm('illegal', v)}>
+                  금융실명거래 및 비밀보장에 관한법률 제3조 제3항에 따라 누구든지 재산의 은닉, 자금세탁행위, 공중협박자금조달 행위 및 강제집행의 면탈, 그 밖의 탈법행위를 목적으로 타인의 실명으로 금융거래를 해서는 아니되며, 이를 위반시 5년 이하의 징역 또는 5천만원 이하의 벌금에 처할 수 있습니다.
+                </AccItem>
+                <AccItem title="예금자보호법 설명 확인" required
+                  checked={termChecks.protection} onCheck={v => checkTerm('protection', v)}>
+                  본인은 AX풀뱅크로부터 가입하는 금융상품의 예금자보호여부(보호 또는 비보호) 및 보호한도에 대하여 설명 받고 이해하였음을 확인합니다.
+                </AccItem>
               </div>
 
               {/* 금융상품의 중요사항 안내 */}
-              <div className="border border-kb-border mb-4">
-                <div className="flex items-center gap-2 bg-[#F5F5F5] border-b border-kb-border px-4 py-3">
-                  <SquareCheck checked={!!checked.prior && !!checked.burden && !!checked.linked} />
-                  <span className="text-[13px] font-bold text-kb-text">금융상품의 중요사항 안내</span>
-                </div>
-
-                {/* 우선설명 사항 */}
-                <div className="border-b border-kb-border">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <span className="flex items-center gap-2 text-[13px]">
-                      <SquareCheck checked={!!checked.prior} />
-                      <span className="text-[11px] font-bold text-[#5BC9A8] border border-[#5BC9A8] px-1.5 py-0.5 rounded-sm">필수</span>
-                      <span className="font-semibold text-kb-text">우선설명 사항</span>
-                    </span>
-                    <button
-                      onClick={() => setOpenModal('prior')}
-                      className="border border-kb-border px-3 py-1 text-[13px] text-kb-text-muted hover:bg-kb-beige-light transition-colors flex-shrink-0"
-                    >
-                      안내사항 보기 ›
-                    </button>
-                  </div>
-                </div>
-
-                {/* 부담정보 */}
-                <div className="border-b border-kb-border">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <span className="flex items-center gap-2 text-[13px]">
-                      <SquareCheck checked={!!checked.burden} />
-                      <span className="text-[11px] font-bold text-[#5BC9A8] border border-[#5BC9A8] px-1.5 py-0.5 rounded-sm">필수</span>
-                      <span className="font-semibold text-kb-text">부담정보 및 금융소비자의 권리 사항</span>
-                    </span>
-                    <button
-                      onClick={() => setOpenModal('burden')}
-                      className="border border-kb-border px-3 py-1 text-[13px] text-kb-text-muted hover:bg-kb-beige-light transition-colors flex-shrink-0"
-                    >
-                      권리사항 보기 ›
-                    </button>
-                  </div>
-                </div>
-
-                {/* 예금성 상품 및 연계·제류 서비스 */}
-                <div>
-                  <button
-                    onClick={() => toggleExpand('linked')}
-                    className="flex items-center justify-between w-full px-4 py-3 hover:bg-[#fafafa] transition-colors">
-                    <span className="flex items-center gap-2 text-[13px]">
-                      <span onClick={e => { e.stopPropagation(); setChecked(p => ({ ...p, linked: !p.linked })) }}>
-                        <SquareCheck checked={!!checked.linked} />
-                      </span>
-                      <span className="text-[11px] font-bold text-[#5BC9A8] border border-[#5BC9A8] px-1.5 py-0.5 rounded-sm">필수</span>
-                      <span className="font-semibold text-kb-text">예금성 상품 및 연계·제휴 서비스</span>
-                    </span>
-                    <span className="text-kb-text-muted text-xs">{expanded.linked ? '∧' : '›'}</span>
-                  </button>
-                  {expanded.linked && (
-                    <div className="px-6 py-3 bg-[#FAFAFA] text-[12px] text-kb-text-body leading-relaxed">
-                      <ul className="space-y-1 mb-2">
-                        {['예금상품의 내용(계약기간, 이자의 지급시기 및 지급제한 사유)','계약의 해제·해지',
-                          '연계·제휴 서비스의 내용, 제공받을 수 있는 요건, 제공기간, 이행책임, 변경시 변경내용 및 그 사유 등을 사전에 알린다는 사실 및 알리는 방법'].map(item => (
-                          <li key={item} className="flex gap-1.5 before:content-['·'] before:flex-shrink-0">{item}</li>
-                        ))}
-                      </ul>
-                      <p className="text-kb-text-muted">※ 금융상품의 중요사항에 대한 일반적인 안내사항으로 세부내용은상품설명서를 통해 확인하실 수 있습니다.</p>
-                      <p className="text-kb-text-muted mt-1">※ 금융소비자는 해당상품 또는 연계·제휴서비스에 대해 설명받을 권리가 있습니다. 궁금한 내용이 있으시면 챗봇/채팅상담, 고객센터 (☎1588-9999), 영업점 직원에게 문의해주시기 바랍니다.</p>
-                      <p className="text-kb-text-muted mt-1">① 「금융소비자보호법」 제19조(설명의무) 항목에서 규정하고 있는 금융상품의 중요한 사항입니다.</p>
-                    </div>
-                  )}
-                </div>
+              <div className="border border-kb-border rounded-xl overflow-hidden mb-4">
+                <SectionHeader title="금융상품의 중요사항 안내" />
+                <AccItem title="우선설명 사항 확인" required
+                  checked={termChecks.priority} onCheck={v => checkTerm('priority', v)}>
+                  <p className="text-[#E05555]">이자율(중도해지이율, 만기후이율) 및 산출근거</p>
+                </AccItem>
+                <AccItem title="부담정보 및 금융소비자의 권리 사항 확인" required
+                  checked={termChecks.burden} onCheck={v => checkTerm('burden', v)}>
+                  <ul className="space-y-1">
+                    {['중도 해지에 따른 불이익', '금리변동형 상품 안내', '자료열람요구권 행사에 관한 사항', '위법계약해지권 행사에 관한 사항',
+                      '금융상품 판매 전후 안내(만기 알림 서비스)', '예금자보호법에 관한 사항(예금자보호 여부 및 그 내용)', '민원처리 및 분쟁조정 절차'].map(item => (
+                      <li key={item} className="text-[#E05555] flex gap-1.5 before:content-['·'] before:flex-shrink-0">{item}</li>
+                    ))}
+                  </ul>
+                </AccItem>
+                <AccItem title="예금성 상품 및 연계·제휴 서비스 확인" required
+                  checked={termChecks.product} onCheck={v => checkTerm('product', v)}>
+                  <ul className="space-y-1 mb-2">
+                    {['예금상품의 내용(계약기간, 이자의 지급시기 및 지급제한 사유)', '계약의 해제·해지',
+                      '연계·제휴 서비스의 내용, 제공받을 수 있는 요건, 제공기간 등을 사전에 알린다는 사실 및 알리는 방법'].map(item => (
+                      <li key={item} className="text-[#E05555] flex gap-1.5 before:content-['·'] before:flex-shrink-0">{item}</li>
+                    ))}
+                  </ul>
+                  <p className="text-kb-text-muted">※ 금융소비자는 해당 상품 또는 서비스에 대해 설명을 받을 권리가 있습니다. 궁금한 내용은 고객센터(☎1588-9999) 또는 영업점에 문의하시기 바랍니다.</p>
+                </AccItem>
               </div>
 
               {/* 최종 동의 */}
-              <div className="border border-kb-border p-4 mb-6">
+              <div className="border border-kb-border rounded-xl p-4 mb-6">
                 <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" checked={finalCheck} onChange={e => setFinalCheck(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 accent-[#5BC9A8]" />
+                  <input type="checkbox" checked={termChecks.final} onChange={e => checkTerm('final', e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-kb-primary" />
                   <div>
-                    <p className="text-[13px] text-kb-text">본인은 위 예금상품의 약관 및 상품설명서를 제공받고 예금상품의 중요한 사항을 충분히 이해하며 본 상품에 가입함을 확인합니다.</p>
-                    <p className="text-[12px] text-[#E05555] mt-1">※ 설명내용을 제대로 이해하지 못하였음에도 설명을 이해했다는 확인을 하는 경우, 추후 권리구제가 어려울 수 있습니다.</p>
+                    <p className="text-[13px] font-semibold text-kb-text">본인은 위 예금상품의 약관과 상품설명서에 대해 중요사항을 충분히 이해하고 본 상품에 가입함을 확인합니다. <span className="text-[#E05555]">(필수)</span></p>
+                    <p className="text-[12px] text-[#E05555] mt-1">※ 설명내용을 제대로 이해하지 못하였음에도 이해했다는 확인을 하는 경우, 추후 권리구제가 어려울 수 있습니다.</p>
                   </div>
                 </label>
               </div>
 
               <div className="flex justify-center gap-2">
                 <Link href={`/products/deposit/${id}`}
-                  className="border border-kb-border px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">
+                  className="border border-kb-border rounded-xl px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">
                   이전
                 </Link>
                 <button onClick={handleStep1Next}
                   className={`px-10 py-2.5 text-[13px] font-bold transition-colors ${
-                    finalCheck ? 'bg-kb-yellow text-kb-text hover:bg-kb-yellow-dark' : 'bg-kb-beige text-kb-text-muted cursor-not-allowed'
+                    allRequiredChecked
+                      ? 'bg-kb-primary text-white rounded-xl hover:opacity-85'
+                      : 'bg-kb-border text-kb-text-muted cursor-not-allowed'
                   }`}>
                   다음
                 </button>
@@ -477,102 +523,288 @@ export default function DepositJoinPage() {
           {/* ══════════ STEP 2: 정보입력 ══════════ */}
           {step === 2 && (
             <div>
-              <p className="text-[14px] font-bold text-[#5BC9A8] border-b-2 border-[#5BC9A8] inline-block pb-1 mb-4">정보입력</p>
-              <div className="border border-kb-border px-5 py-2 mb-6 space-y-0">
-                <FormRow label="가입기간">
+              <p className="text-[14px] font-bold text-kb-primary border-b-2 border-kb-primary inline-block pb-1 mb-4">정보입력</p>
+
+              <div className="border border-kb-border rounded-xl px-5 py-2 mb-6 space-y-0">
+                {/* 군인 인증 - 장병내일준비적금 전용 */}
+                {id === 'axful-soldier' && (
+                  <>
+                    <div className="bg-kb-primary-bg border border-kb-primary-border px-4 py-3 mb-3 text-[12px] text-kb-text-body rounded">
+                      <p className="font-semibold text-[#2D6A4F] mb-1">현역 복무 중인 장병만 가입 가능합니다.</p>
+                      <p>· 군번 및 복무 정보는 병무청 데이터와 대조하여 확인됩니다.</p>
+                      <p>· 허위 정보 입력 시 가입이 취소될 수 있습니다.</p>
+                    </div>
+                    <FormRow label="군종 선택">
+                      <div className="flex gap-5 flex-wrap">
+                        {['육군', '해군', '공군', '해병대', '해양경찰'].map(branch => (
+                          <label key={branch} className="flex items-center gap-2 text-[13px] cursor-pointer">
+                            <input type="radio" name="militaryBranch" checked={militaryBranch === branch}
+                              onChange={() => setMilitaryBranch(branch)} className="accent-kb-primary" />
+                            {branch}
+                          </label>
+                        ))}
+                      </div>
+                    </FormRow>
+                    <FormRow label="군번">
+                      <input type="text" value={militaryId} onChange={e => setMilitaryId(e.target.value)}
+                        placeholder="예: 20-12345678"
+                        className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] w-48 outline-none" />
+                      <p className="text-[12px] text-kb-text-muted mt-1">군번은 군 식별번호입니다.</p>
+                    </FormRow>
+                    <FormRow label="입대일">
+                      <input type="date" value={enlistDate} onChange={e => setEnlistDate(e.target.value)}
+                        className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none" />
+                    </FormRow>
+                    <FormRow label="전역예정일">
+                      <input type="date" value={dischargeDate} onChange={e => setDischargeDate(e.target.value)}
+                        className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none" />
+                      <p className="text-[12px] text-kb-text-muted mt-1">* 전역예정일 기준으로 만기가 설정됩니다.</p>
+                    </FormRow>
+                  </>
+                )}
+
+                {/* 가입기간 - 입출금 상품은 숨김 */}
+                {!isChecking && (
+                  <FormRow label="가입기간">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[12px] text-kb-text-muted mr-2">1~36개월, 월단위</p>
-                    <input type="text" value={period} onChange={e => setPeriod(e.target.value.replace(/[^0-9]/g, ''))}
-                      placeholder="기간" className="border border-kb-border px-3 py-1.5 text-[13px] w-20 outline-none" />
-                    <span className="text-[13px]">개월</span>
-                    {[6, 12, 24, 36].map(m => (
-                      <button key={m}
-                        onClick={() => { setPeriod(String(m)); setPeriodPreset(String(m)) }}
-                        className={`px-4 py-1.5 text-[12px] border transition-colors ${
-                          periodPreset === String(m) ? 'border-[#5BC9A8] text-[#5BC9A8] font-bold bg-white' : 'border-kb-border text-kb-text-body hover:bg-kb-beige-light'
-                        }`}>
-                        {m}개월
-                      </button>
-                    ))}
+                    <p className="text-[12px] text-kb-text-muted mr-2">{periodRange.label}</p>
+                    {periodRange.min === periodRange.max ? (
+                      /* 기간 고정 상품 */
+                      <>
+                        <input type="text" value={period} readOnly
+                          className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] w-20 outline-none bg-[#F5F5F5] text-center" />
+                        <span className="text-[13px]">개월 (고정)</span>
+                      </>
+                    ) : (
+                      /* 기간 선택 가능 상품 */
+                      <>
+                        <input type="text" value={period} onChange={e => setPeriod(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="기간"
+                          className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] w-20 outline-none" />
+                        <span className="text-[13px]">개월</span>
+                        {(isSavings
+                          ? (periodRange.max <= 12
+                              ? [1, 3, 6, 12].filter(v => v >= periodRange.min && v <= periodRange.max)
+                              : [6, 12, 24, 36].filter(v => v >= periodRange.min && v <= periodRange.max))
+                          : [6, 12, 24, 36]
+                        ).map(m => (
+                          <button key={m}
+                            onClick={() => { setPeriod(String(m)); setPeriodPreset(String(m)) }}
+                            className={`px-4 py-1.5 text-[12px] border rounded-lg transition-colors ${
+                              periodPreset === String(m)
+                                ? 'border-kb-primary text-kb-primary font-bold bg-white'
+                                : 'border-kb-border text-kb-text-body hover:bg-kb-beige-light'
+                            }`}>
+                            {m}개월
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
-                </FormRow>
-                <FormRow label="가입금액">
+                  </FormRow>
+                )}
+
+                {/* 자동이체 여부 - 정기적금 전용 */}
+                {isRegularSavings && (
+                  <FormRow label="자동이체 여부">
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                        <input type="radio" name="autoTransfer" value="yes"
+                          checked={autoTransfer === 'yes'}
+                          onChange={() => setAutoTransfer('yes')} className="accent-kb-primary" />
+                        신청
+                      </label>
+                      <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                        <input type="radio" name="autoTransfer" value="no"
+                          checked={autoTransfer === 'no'}
+                          onChange={() => setAutoTransfer('no')} className="accent-kb-primary" />
+                        미신청
+                      </label>
+                    </div>
+                  </FormRow>
+                )}
+
+                {/* 월 납입금액 - 정기적금은 항상, 그 외는 가입금액/자유납입/초기입금 */}
+                <FormRow label={isFreeStyleSavings ? '최초 납입금액' : isRegularSavings ? '월 납입금액' : isChecking ? '초기 입금금액' : '가입금액'}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[12px] text-kb-text-muted mr-2">최소 100만원 이상, 원단위</p>
+                    <p className="text-[12px] text-kb-text-muted mr-2">
+                      {isFreeStyleSavings ? '최소 1만원 이상, 이후 자유 납입'
+                        : isRegularSavings ? '최소 1만원 이상, 원단위'
+                        : isChecking ? '최소 1원 이상, 원단위'
+                        : '최소 100만원 이상, 원단위'}
+                    </p>
                     <input type="text" value={amount} onChange={e => setAmount(e.target.value)}
-                      placeholder="0" className="border border-kb-border px-3 py-1.5 text-[13px] w-32 outline-none text-right" />
+                      placeholder="0"
+                      className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] w-32 outline-none text-right" />
                     <span className="text-[13px]">원</span>
-                    {[1000, 500, 300, 100].map(v => (
+                    {(isSavings ? [1, 3, 5, 10] : isChecking ? [1, 3, 5, 10, 20] : [1000, 500, 300, 100]).map(v => (
                       <button key={v} onClick={() => addAmount(v)}
-                        className="border border-kb-border px-3 py-1.5 text-[12px] text-kb-text-body hover:bg-kb-beige-light">
-                        {v >= 1000 ? `${v / 100}천만` : `${v}만`}
+                        className="border border-kb-border rounded-lg px-3 py-1.5 text-[12px] text-kb-text-body hover:bg-kb-beige-light">
+                        {(isSavings || isChecking) ? `${v}만` : (v >= 1000 ? `${v / 100}천만` : `${v}만`)}
                       </button>
                     ))}
                   </div>
                 </FormRow>
+
+                {/* 자동이체일 - 신청 선택 시 */}
+                {isRegularSavings && autoTransfer === 'yes' && (
+                  <FormRow label="자동이체일">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px]">매월</span>
+                      <select value={transferDay} onChange={e => setTransferDay(e.target.value)}
+                        className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white w-24">
+                        <option value="">선택</option>
+                        <option value="1">1일</option>
+                        <option value="2">2일</option>
+                        <option value="3">3일</option>
+                        <option value="4">4일</option>
+                        <option value="5">5일</option>
+                        <option value="6">6일</option>
+                        <option value="7">7일</option>
+                        <option value="8">8일</option>
+                        <option value="9">9일</option>
+                        <option value="10">10일</option>
+                        <option value="11">11일</option>
+                        <option value="12">12일</option>
+                        <option value="13">13일</option>
+                        <option value="14">14일</option>
+                        <option value="15">15일</option>
+                        <option value="16">16일</option>
+                        <option value="17">17일</option>
+                        <option value="18">18일</option>
+                        <option value="19">19일</option>
+                        <option value="20">20일</option>
+                        <option value="21">21일</option>
+                        <option value="22">22일</option>
+                        <option value="23">23일</option>
+                        <option value="24">24일</option>
+                        <option value="25">25일</option>
+                        <option value="26">26일</option>
+                        <option value="27">27일</option>
+                        <option value="28">28일</option>
+                        <option value="29">29일</option>
+                        <option value="30">30일</option>
+                        <option value="31">31일</option>
+                      </select>
+                      <span className="text-[13px]">이체</span>
+                    </div>
+                    <p className="text-[12px] text-kb-text-muted mt-1">* 29~31일은 해당 월 말일에 이체됩니다.</p>
+                  </FormRow>
+                )}
+
+                {/* 자동이체 출금계좌 - 신청 선택 시 */}
+                {isRegularSavings && autoTransfer === 'yes' && (
+                  <FormRow label="자동이체 출금계좌">
+                    <div className="flex items-center gap-2 mb-1">
+                      <select className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white">
+                        <option>AX풀뱅크</option>
+                      </select>
+                      <select value={transferAccount} onChange={e => setTransferAccount(e.target.value)}
+                        className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white flex-1 max-w-[280px]">
+                        {withdrawAccounts.length === 0
+                          ? <option value="">출금 가능한 계좌가 없습니다</option>
+                          : withdrawAccounts.map(a => <option key={a.id} value={a.id}>{a.number} ({a.name})</option>)}
+                      </select>
+                    </div>
+                    <p className="text-[12px]">출금가능금액 <span className="text-[#E05555] font-bold">{formatNumber(withdrawAccounts.find(a => a.id === transferAccount)?.availableBalance ?? 0)}</span>원</p>
+                  </FormRow>
+                )}
+
+                {/* 쿠폰/포인트 */}
                 <FormRow label="AXful금융쿠폰/포인트리 사용">
                   <div className="flex gap-6">
                     {([['coupon', 'AXful금융쿠폰(0)'], ['point', '포인트리'], ['none', '사용안함']] as const).map(([val, label]) => (
                       <label key={val} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                        <input type="radio" name="coupon" checked={couponType === val} onChange={() => setCouponType(val)} className="accent-[#5BC9A8]" />
+                        <input type="radio" name="coupon" checked={couponType === val}
+                          onChange={() => setCouponType(val)} className="accent-kb-primary" />
                         {label}
                       </label>
                     ))}
                   </div>
                 </FormRow>
+
+                {/* 비과세 */}
                 <FormRow label="비과세종합저축으로 가입">
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 text-[13px] cursor-pointer">
-                      <input type="checkbox" checked={taxExempt} onChange={e => setTaxExempt(e.target.checked)} className="w-4 h-4 accent-[#5BC9A8]" />
+                      <input type="checkbox" checked={taxExempt} onChange={e => setTaxExempt(e.target.checked)}
+                        className="w-4 h-4 accent-kb-primary" />
                       비과세종합저축 적용
                     </label>
                     <button className="text-[12px] text-kb-blue hover:underline">자세히보기 ›</button>
                   </div>
                 </FormRow>
+
+                {/* 출금계좌 */}
                 <FormRow label="출금계좌번호">
                   <div className="flex items-center gap-2 mb-1">
-                    <select className="border border-kb-border px-3 py-1.5 text-[13px] outline-none bg-white"><option>AX풀뱅크</option></select>
-                    <select className="border border-kb-border px-3 py-1.5 text-[13px] outline-none bg-white flex-1 max-w-[280px]">
-                      <option>531089-04-274618(AX풀뱅크)</option>
+                    <select className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white">
+                      <option>AX풀뱅크</option>
+                    </select>
+                    <select value={withdrawAccount} onChange={e => setWithdrawAccount(e.target.value)}
+                      className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white flex-1 max-w-[280px]">
+                      {withdrawAccounts.length === 0
+                        ? <option value="">출금 가능한 계좌가 없습니다</option>
+                        : withdrawAccounts.map(a => <option key={a.id} value={a.id}>{a.number} ({a.name})</option>)}
                     </select>
                   </div>
-                  <p className="text-[12px]">출금가능금액 <span className="text-[#E05555] font-bold">1,007,807</span>원</p>
+                  <p className="text-[12px]">출금가능금액 <span className="text-[#E05555] font-bold">{formatNumber(withdrawAccounts.find(a => a.id === withdrawAccount)?.availableBalance ?? 0)}</span>원</p>
                 </FormRow>
+
+                {/* 비밀번호 */}
                 <FormRow label="비밀번호 입력">
                   <div className="flex gap-6">
                     {([['same', '출금계좌와 동일하게 설정'], ['new', '신규 설정']] as const).map(([val, label]) => (
                       <label key={val} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                        <input type="radio" name="pw" checked={passwordType === val} onChange={() => setPasswordType(val)} className="accent-[#5BC9A8]" />
+                        <input type="radio" name="pw" checked={passwordType === val}
+                          onChange={() => setPasswordType(val)} className="accent-kb-primary" />
                         {label}
                       </label>
                     ))}
                   </div>
                 </FormRow>
-                <FormRow label="만기 해지방법">
-                  <select value={maturity} onChange={e => setMaturity(e.target.value)} className="border border-kb-border px-3 py-1.5 text-[13px] outline-none bg-white w-60">
-                    {MATURITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
-                  </select>
-                  <p className="text-[12px] text-kb-text-muted mt-1">* 만기 해지방법은 만기일 전까지 변경할 수 있습니다.</p>
-                </FormRow>
-                <FormRow label="상품만기알림(LMS) 서비스 신청">
-                  <div className="flex gap-6 mb-2">
-                    {([['yes', '예'], ['no', '아니오']] as const).map(([val, label]) => (
-                      <label key={val} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                        <input type="radio" name="lms" checked={lms === val} onChange={() => setLms(val)} className="accent-[#5BC9A8]" />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                  <p className="text-[12px] text-kb-text-muted">LMS를 통해 예·적금상품의 만기를 사전 안내해드리는 서비스</p>
-                </FormRow>
+
+                {/* 만기 해지방법 - 입출금 상품은 숨김 */}
+                {!isChecking && (
+                  <FormRow label="만기 해지방법">
+                    <select value={maturity} onChange={e => setMaturity(e.target.value)}
+                      className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white w-60">
+                      {MATURITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                    <p className="text-[12px] text-kb-text-muted mt-1">* 만기 해지방법은 만기일 전까지 변경할 수 있습니다.</p>
+                  </FormRow>
+                )}
+
+                {/* LMS - 입출금 상품은 숨김 */}
+                {!isChecking && (
+                  <FormRow label="상품만기알림(LMS) 서비스 신청">
+                    <div className="flex gap-6 mb-2">
+                      {([['yes', '예'], ['no', '아니오']] as const).map(([val, label]) => (
+                        <label key={val} className="flex items-center gap-2 text-[13px] cursor-pointer">
+                          <input type="radio" name="lms" checked={lms === val}
+                            onChange={() => setLms(val)} className="accent-kb-primary" />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[12px] text-kb-text-muted">LMS를 통해 예·적금상품의 만기를 사전 안내해드리는 서비스</p>
+                  </FormRow>
+                )}
+
+                {/* 권유직원 */}
                 <FormRow label="권유직원선택">
-                  <select className="border border-kb-border px-3 py-1.5 text-[13px] outline-none bg-white w-48"><option>권유직원없음</option></select>
+                  <select className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] outline-none bg-white w-48">
+                    <option>권유직원없음</option>
+                  </select>
                 </FormRow>
+
+                {/* 서류 수령 방법 */}
                 <FormRow label="예금상품 계약서, 약관(특약), 상품설명서 제공">
                   <div className="flex gap-6 mb-2">
                     {([['email', '이메일주소로 받기'], ['lms', '문자메시지(LMS) 받기']] as const).map(([val, label]) => (
                       <label key={val} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                        <input type="radio" name="doc" checked={docMethod === val} onChange={() => setDocMethod(val)} className="accent-[#5BC9A8]" />
+                        <input type="radio" name="doc" checked={docMethod === val}
+                          onChange={() => setDocMethod(val)} className="accent-kb-primary" />
                         {label}
                       </label>
                     ))}
@@ -580,15 +812,31 @@ export default function DepositJoinPage() {
                   <p className="text-[12px] text-kb-text-muted">※ 금융소비자보호법에 따라 이메일 및 문자메시지(LMS) 수신 거부 여부와 관계없이 발송됩니다.</p>
                 </FormRow>
               </div>
-              <div className="border border-kb-border bg-[#FAFAFA] px-4 py-3 mb-6 text-[12px] text-kb-text-body space-y-1">
-                {['본 상품을 인터넷/AXful뱅킹으로 해지할 경우 휴대전화의 인증을 통해 해지가능합니다.','최신전화 휴대전화는 인증이 되지 않습니다.'].map((n, i) => (
+
+              {/* 안내 박스 */}
+              <div className="border border-kb-border rounded-xl bg-[#FAFAFA] px-4 py-3 mb-6 text-[12px] text-kb-text-body space-y-1">
+                {[
+                  '본 상품을 인터넷/AXful뱅킹으로 해지할 경우 휴대전화의 인증을 통해 해지가능합니다. 인증 후 본 상품에 가입합니다.',
+                  '최신전화 휴대전화는 인증이 되지 않습니다.',
+                  <span key="r" className="font-semibold">만기해지방법은 만기일 전까지 변경이 가능합니다.</span>,
+                  <span key="r2" className="font-semibold">비과세종합저축 선택 시 만기해지방법은 자동해지만 가능합니다.</span>,
+                ].map((n, i) => (
                   <p key={i} className="flex gap-1.5"><span className="flex-shrink-0">·</span><span>{n}</span></p>
                 ))}
               </div>
+
               <div className="flex justify-center gap-2">
-                <button onClick={() => setStep(1)} className="border border-kb-border px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">이전</button>
-                <button onClick={handleStep2Next} className="bg-kb-yellow px-10 py-2.5 text-[13px] font-bold text-kb-text hover:bg-kb-yellow-dark">다음</button>
-                <button className="border border-kb-border px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">임시저장</button>
+                <button onClick={() => setStep(1)}
+                  className="border border-kb-border rounded-xl px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">
+                  이전
+                </button>
+                <button onClick={handleStep2Next}
+                  className="bg-kb-primary px-10 py-2.5 text-[13px] font-bold text-white rounded-xl hover:opacity-85 transition-opacity">
+                  다음
+                </button>
+                <button className="border border-kb-border rounded-xl px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">
+                  임시저장
+                </button>
               </div>
             </div>
           )}
@@ -596,46 +844,73 @@ export default function DepositJoinPage() {
           {/* ══════════ STEP 3: 정보확인 ══════════ */}
           {step === 3 && (
             <div>
-              <p className="text-[14px] font-bold text-[#5BC9A8] border-b-2 border-[#5BC9A8] inline-block pb-1 mb-4">정보 확인</p>
+              <p className="text-[14px] font-bold text-kb-primary border-b-2 border-kb-primary inline-block pb-1 mb-4">정보 확인</p>
+
               <table className="w-full border-collapse text-[13px] border-t-2 border-kb-text mb-3">
                 <tbody>
                   {[
                     { label: '신규일자', value: '2026.05.25' },
-                    { label: '가입기간', value: `${maturityDate} (${period}개월)` },
-                    { label: '가입금액', value: `${amount}원` },
-                    { label: '이자지급방법', value: '만기일시지급' },
-                    { label: '적용금리', value: '2.1 + 0.75(%)' },
+                    ...(id === 'axful-soldier' ? [
+                      { label: '군종', value: militaryBranch },
+                      { label: '군번', value: militaryId },
+                      { label: '입대일', value: enlistDate },
+                      { label: '전역예정일', value: dischargeDate },
+                    ] : []),
+                    ...(!isChecking ? [{ label: '가입기간', value: `${maturityDate} (${period}개월)` }] : []),
+                    ...(isRegularSavings ? [
+                      { label: '자동이체 여부', value: autoTransfer === 'yes' ? '신청' : '미신청' },
+                      ...(autoTransfer === 'yes' ? [
+                        { label: '자동이체일', value: `매월 ${transferDay}일` },
+                        { label: '자동이체 출금계좌', value: `AX풀뱅크 ${withdrawAccounts.find(a => a.id === transferAccount)?.number ?? '-'}` },
+                      ] : []),
+                    ] : []),
+                    { label: isFreeStyleSavings ? '납입방식' : isRegularSavings ? '월 이체금액' : isChecking ? '초기 입금금액' : '가입금액',
+                      value: isFreeStyleSavings ? '자유 납입 (1회 최소 1만원)' : `${amount}원` },
+                    ...(!isChecking ? [{ label: '이자지급방법', value: isSavings ? '만기일시지급식' : '만기일시지급식' }] : []),
+                    { label: '적용금리', value: PRODUCT_RATES[id] ?? (isChecking ? '연 0.1%' : '연 2.4%') },
                     { label: '적용과세', value: taxExempt ? '비과세' : '일반' },
-                    { label: '출금계좌', value: 'AX풀뱅크 531089-04-274618' },
-                    { label: '상품만기알림(LMS) 서비스 신청', value: lms === 'yes' ? '신청' : '미신청' },
-                    { label: '연계·제휴서비스', value: '해당사항 없음' },
+                    { label: '출금계좌', value: `AX풀뱅크 ${withdrawAccounts.find(a => a.id === withdrawAccount)?.number ?? '-'}` },
+                    ...(!isChecking ? [{ label: '상품만기알림(LMS) 서비스 신청', value: lms === 'yes' ? '신청' : '미신청' }] : []),
+                    { label: '연계·제류서비스', value: '해당사항 없음' },
                   ].map(row => (
                     <tr key={row.label}>
-                      <td className="bg-kb-beige-light border border-kb-border px-4 py-3 font-semibold text-kb-text w-[180px] whitespace-nowrap">{row.label}</td>
+                      <td className="bg-kb-beige-light border border-kb-border px-4 py-3 font-semibold text-kb-text w-[180px] whitespace-nowrap">
+                        {row.label}
+                      </td>
                       <td className="border border-kb-border px-4 py-3 text-kb-text-body">{row.value}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+
               <div className="text-[12px] text-kb-text-muted mb-5 space-y-1">
-                <p>※ 가입 후에는 '계약서류' 관련 약관을 통해 상품설명문서를 확인할 수 있습니다.</p>
+                <p>※ 본 상품정보 교회를 이용하실 시 상품 이전을 참조하기 위한 것입니다. 자세한 내용은 <button className="text-kb-blue hover:underline">상품설명서 ›</button>를 참조하시기 바랍니다.</p>
+                <p>※ 가입 후에는 &apos;계약서류&apos; 관련 약관을 통해 상품설명문서를 확인할 수 있습니다.</p>
               </div>
-              <div className="border-t-2 border-kb-text pt-4">
-                <p className="text-[14px] font-bold text-[#5BC9A8] border-b-2 border-[#5BC9A8] inline-block pb-1 mb-3">출금계좌 및 비밀번호 확인</p>
+
+              {/* 예금계좌 비밀번호 설정 */}
+              <div className="border border-t-2 border-kb-text pt-0">
+                <p className="text-[14px] font-bold text-kb-primary border-b-2 border-kb-primary inline-block pb-1 mb-3">예금계좌 비밀번호 설정</p>
                 <table className="w-full border-collapse text-[13px]">
                   <tbody>
                     <tr>
-                      <td className="bg-kb-beige-light border border-kb-border px-4 py-3 font-semibold text-kb-text w-[120px]">계좌번호</td>
-                      <td className="border border-kb-border px-4 py-3 text-kb-text-body">531089-04-274618</td>
-                    </tr>
-                    <tr>
-                      <td className="bg-kb-beige-light border border-kb-border px-4 py-3 font-semibold text-kb-text">계좌 비밀번호</td>
+                      <td className="bg-kb-beige-light border border-kb-border px-4 py-3 font-semibold text-kb-text w-[150px] whitespace-nowrap">비밀번호 (4자리)</td>
                       <td className="border border-kb-border px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <input type={mouseInput ? 'text' : 'password'} value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
-                            maxLength={4} className="border border-kb-border px-3 py-1.5 text-[13px] w-28 outline-none" />
-                          <label className="flex items-center gap-1.5 text-[12px] cursor-pointer">
-                            <input type="checkbox" checked={mouseInput} onChange={e => setMouseInput(e.target.checked)} />
+                        <div className="flex flex-col gap-2">
+                          {mouseInput ? (
+                            <MouseNumKeypad value={mouseConfirmPw} onChange={setMouseConfirmPw} maxLength={4} dotCount={4} />
+                          ) : (
+                            <input
+                              type="password"
+                              value={confirmPw}
+                              onChange={e => setConfirmPw(e.target.value)}
+                              maxLength={4}
+                              placeholder="4자리 입력"
+                              className="border border-kb-border rounded-lg px-3 py-1.5 text-[13px] w-28 outline-none"
+                            />
+                          )}
+                          <label className="flex items-center gap-1.5 text-[12px] cursor-pointer w-fit">
+                            <input type="checkbox" checked={mouseInput} onChange={e => { setMouseInput(e.target.checked); setMouseConfirmPw(''); setConfirmPw('') }} />
                             마우스로 입력
                           </label>
                         </div>
@@ -644,256 +919,21 @@ export default function DepositJoinPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="flex justify-center gap-2 mt-6">
-                <button onClick={() => setStep(2)} className="border border-kb-border px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">이전</button>
-                <button onClick={handleFinalConfirm} className="bg-kb-yellow px-10 py-2.5 text-[13px] font-bold text-kb-text hover:bg-kb-yellow-dark">확인</button>
-              </div>
-            </div>
-          )}
 
-          {/* ══════════ STEP 4: 완료 ══════════ */}
-          {step === 4 && (
-            <div className="border border-kb-border py-16 text-center">
-              <div className="flex justify-center mb-4">
-                <svg viewBox="0 0 48 48" fill="none" className="w-14 h-14">
-                  <circle cx="24" cy="24" r="22" fill="#5BC9A8" />
-                  <polyline points="13,24 21,32 35,16" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <p className="text-[18px] font-bold text-kb-text mb-2">{productName} 가입이 완료되었습니다.</p>
-              <p className="text-[13px] text-kb-text-muted mb-1">신규일자 2026.05.25 &nbsp;|&nbsp; 가입금액 {amount}원</p>
-              <p className="text-[13px] text-kb-text-muted mb-8">신규 결과는 신규결과/내역 조회에서 확인하실 수 있습니다.</p>
-              <div className="flex justify-center gap-2">
-                <Link href="/products/deposit/inquiry/new"
-                  className="inline-block border border-kb-border px-8 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">
-                  신규결과 조회
-                </Link>
-                <Link href="/products/deposit"
-                  className="inline-block bg-kb-yellow px-8 py-2.5 text-[13px] font-bold text-kb-text hover:bg-kb-yellow-dark">
-                  예금 상품 목록
-                </Link>
+              <div className="flex justify-center gap-2 mt-6">
+                <button onClick={() => setStep(2)}
+                  className="border border-kb-border rounded-xl px-10 py-2.5 text-[13px] text-kb-text-body hover:bg-kb-beige-light">
+                  이전
+                </button>
+                <button onClick={handleFinalConfirm} disabled={submitting}
+                  className="bg-kb-primary px-10 py-2.5 text-[13px] font-bold text-white rounded-xl hover:opacity-85 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                  {submitting ? '처리 중...' : '가입완료'}
+                </button>
               </div>
             </div>
           )}
         </main>
       </div>
     </div>
-
-    {/* ══════════ 약관 문서 모달 (개별 보기) ══════════ */}
-    {openModal && TERM_CONTENT[openModal] && createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" onClick={() => setOpenModal(null)} />
-        <div className="relative bg-white w-[680px] max-h-[80vh] flex flex-col shadow-lg">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-kb-border flex-shrink-0">
-            <p className="text-[14px] font-bold text-kb-text">약관 및 상품설명서</p>
-            <button onClick={() => setOpenModal(null)} className="text-[18px] leading-none text-kb-text-muted hover:text-kb-text">✕</button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {TERM_CONTENT[openModal].body}
-          </div>
-          <div className="flex justify-center items-center px-5 py-3 border-t border-kb-border flex-shrink-0">
-            <ConfirmBtn onClick={() => { mark(openModal); setOpenModal(null) }} label="확인" />
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {/* ══════════ 전체약관보기 순차 모달 ══════════ */}
-    {seqIdx !== null && TERM_DOCS[seqIdx] && createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" onClick={() => setSeqIdx(null)} />
-        <div className="relative bg-white w-[680px] max-h-[80vh] flex flex-col shadow-lg">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-kb-border flex-shrink-0">
-            <p className="text-[14px] font-bold text-kb-text">
-              약관 및 상품설명서 ({seqIdx + 1}/{TERM_DOCS.length})
-            </p>
-            <button onClick={() => setSeqIdx(null)} className="text-[18px] leading-none text-kb-text-muted hover:text-kb-text">✕</button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {TERM_CONTENT[TERM_DOCS[seqIdx].key].body}
-          </div>
-          <div className="flex justify-center items-center px-5 py-3 border-t border-kb-border flex-shrink-0">
-            <ConfirmBtn
-              onClick={() => {
-                if (seqIdx === null) return
-                mark(TERM_DOCS[seqIdx].key)
-                const next = seqIdx + 1
-                setSeqIdx(next < TERM_DOCS.length ? next : null)
-              }}
-              label={seqIdx + 1 < TERM_DOCS.length ? '확인 (다음)' : '확인'}
-            />
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {/* ══════════ 우선설명 사항 모달 ══════════ */}
-    {openModal === 'prior' && createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" onClick={() => setOpenModal(null)} />
-        <div className="relative bg-white w-[680px] max-h-[80vh] flex flex-col shadow-lg">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-kb-border flex-shrink-0">
-            <p className="text-[14px] font-bold text-kb-text">우선설명 사항 [필수]</p>
-            <button onClick={() => setOpenModal(null)} className="text-[18px] leading-none text-kb-text-muted hover:text-kb-text">✕</button>
-          </div>
-          {/* 탭 */}
-          <div className="flex border-b border-kb-border flex-shrink-0">
-            {PRIOR_TABS.map((tab, i) => (
-              <button key={tab} onClick={() => setPriorTab(i)}
-                className={`flex-1 py-2.5 text-[13px] transition-colors ${
-                  priorTab === i ? 'font-bold text-kb-text border-b-2 border-kb-text -mb-px' : 'text-kb-text-muted hover:text-kb-text'
-                }`}>
-                {tab}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 overflow-y-auto p-5">
-            <p className="text-[13px] font-semibold text-kb-text mb-3">AXful 정기예금</p>
-            {priorTab === 0 && (
-              <>
-                <p className="text-[11px] text-kb-text-muted mb-2 text-right">(세금공제전, 단위:연%)</p>
-                <table className="w-full text-[12px] border border-kb-border">
-                  <thead className="bg-[#F5F5F5]">
-                    <tr>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">기간</th>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">기본이율</th>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">고객적용이율</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-kb-border">
-                    {BASIC_RATES.map(r => (
-                      <tr key={r.period} className="hover:bg-kb-beige-light">
-                        <td className="px-3 py-2 text-center">{r.period}</td>
-                        <td className="px-3 py-2 text-center">{r.base}</td>
-                        <td className="px-3 py-2 text-center">{r.cust}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="mt-3 text-[11px] text-kb-text-muted space-y-1">
-                  <p>- 금리우대쿠폰: 이 예금의 신규 시 금리우대쿠폰을 적용한 경우 쿠폰 우대금리를 기본이율에 가산</p>
-                  <p>- 금리우대쿠폰 우대금리는 신규 당시 적용한 쿠폰의 우대금리를 따르며, 세부 사항(적용방법, 유의사항 등)은 금리우대쿠폰에서 확인 가능</p>
-                  <p>※ 금리우대쿠폰은 신규 시에만 사용 가능하며 재예치 및 중도해지 시 미적용</p>
-                </div>
-              </>
-            )}
-            {priorTab === 1 && (
-              <div className="text-[13px] text-kb-text-muted text-center py-10">해당 금리내용이 없습니다.</div>
-            )}
-            {priorTab === 2 && (
-              <>
-                <p className="text-[11px] text-kb-text-muted mb-2">(조회일 기준, 세금공제전, 단위:연%)</p>
-                <table className="w-full text-[12px] border border-kb-border">
-                  <thead className="bg-[#F5F5F5]">
-                    <tr>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">예치기간</th>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">이 율</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-kb-border">
-                    {EARLY_RATES.map(r => (
-                      <tr key={r.period} className="hover:bg-kb-beige-light">
-                        <td className="px-3 py-2 text-center">{r.period}</td>
-                        <td className="px-3 py-2 text-center text-[11px]">{r.rate}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="mt-3 text-[11px] text-kb-text-muted space-y-1">
-                  <p>1. 기본이율: 신규가입일 당시 영업점에 고시된 계약기간별 이율(우대이율 제외)</p>
-                  <p>2. 경과월수: 입금일 다음날부터 해지일 입금해당날까지를 필수로 하고, 1개월미만은 절상</p>
-                  <p>3. 이율은 소수점 둘째자리까지 표시(소수점 셋째자리에서 절사)</p>
-                </div>
-              </>
-            )}
-            {priorTab === 3 && (
-              <>
-                <p className="text-[11px] text-kb-text-muted mb-2">(조회일 기준, 세금공제전, 단위:연%)</p>
-                <table className="w-full text-[12px] border border-kb-border">
-                  <thead className="bg-[#F5F5F5]">
-                    <tr>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">경과기간</th>
-                      <th className="px-3 py-2 border-b border-kb-border text-center">이 율</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-kb-border">
-                    {MATURITY_RATES.map(r => (
-                      <tr key={r.period} className="hover:bg-kb-beige-light">
-                        <td className="px-3 py-2 text-center">{r.period}</td>
-                        <td className="px-3 py-2 text-center">{r.rate}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </div>
-          <div className="flex justify-center items-center px-5 py-3 border-t border-kb-border flex-shrink-0">
-            <ConfirmBtn onClick={() => { mark('prior'); setOpenModal(null) }} label="확인" />
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {/* ══════════ 부담정보 모달 ══════════ */}
-    {openModal === 'burden' && createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" onClick={() => setOpenModal(null)} />
-        <div className="relative bg-white w-[680px] max-h-[80vh] flex flex-col shadow-lg">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-kb-border flex-shrink-0">
-            <p className="text-[14px] font-bold text-kb-text">부담정보 및 금융소비자의 권리 사항 [필수]</p>
-            <button onClick={() => setOpenModal(null)} className="text-[18px] leading-none text-kb-text-muted hover:text-kb-text">✕</button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-5 text-[13px] text-kb-text-body space-y-5">
-            <div>
-              <h3 className="font-bold mb-1">중도 해지에 따른 불이익</h3>
-              <p className="text-[12px]">신규가입일 당시 영업점 및 인터넷 홈페이지(www.axful.com)에 고시된 예치기간별 중도해지이율 적용<br />※ 긴급 자금수요 등으로 중도해지할 경우 예금성 상품 중도해지이율에 비해 회전식 예금성 상품이 유리할 수 있음</p>
-            </div>
-            <div>
-              <h3 className="font-bold mb-2">금리변동형 상품 안내</h3>
-              <p className="text-[12px] mb-2">금리변동형 예금성 상품은 금리상승에 약정금리 인상 가능성이 큰 반면, 금리 하락기에는 약정금리 인하로 소비자에게 돌려줄 수 있습니다</p>
-              <table className="w-full border border-kb-border text-[12px]">
-                <thead className="bg-[#F5F5F5]">
-                  <tr>
-                    <th className="px-3 py-2 border-b border-r border-kb-border">구분</th>
-                    <th className="px-3 py-2 border-b border-r border-kb-border">고정금리</th>
-                    <th className="px-3 py-2 border-b border-kb-border">변동금리</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-kb-border">
-                  {[
-                    ['특징','예금 가입시 결정된 금리가 예금만기까지 동일하게 유지','일정주기(3/6개월 등)마다 예금 기준금리의 변동에 따라 예금금리가 변동'],
-                    ['장점','시장금리 하락기에 이자 하락이 없음','시장금리 상승기에 이자 수익이 증가'],
-                    ['단점','시장금리 상승기에 이자 상승 효과가 없어 변동금리보다 불리','시장금리 하락기에는 이자 하락으로 고정금리보다 불리'],
-                  ].map(([k,a,b]) => (
-                    <tr key={k}>
-                      <td className="px-3 py-2 border-r border-kb-border font-medium text-center">{k}</td>
-                      <td className="px-3 py-2 border-r border-kb-border">{a}</td>
-                      <td className="px-3 py-2">{b}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div>
-              <h3 className="font-bold mb-1">자료열람요구권 행사에 관한 사항</h3>
-              <p className="text-[12px]">금융소비자는 분쟁조정 또는 소송의 수행 등 권리구제를 위한 목적으로 금융회사가 기록 및 유지·관리하는 다음의 자료에 대한 열람(사본 및 청취 포함)을 요구할 수 있습니다.</p>
-            </div>
-            <div>
-              <h3 className="font-bold mb-1">위법계약해지권 행사에 관한 사항</h3>
-              <p className="text-[12px]">금융소비자는 금융소비자보호법 제47조에 따라 금융상품에 관한 계약을 체결하는 경우 법 위반사실을 안 날부터 1년 이내(해당 계약의 체결일부터 5년 이내)의 범위에서 해지를 요구할 수 있습니다.</p>
-            </div>
-          </div>
-          <div className="flex justify-center items-center px-5 py-3 border-t border-kb-border flex-shrink-0">
-            <ConfirmBtn onClick={() => { mark('burden'); setOpenModal(null) }} label="확인" />
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-    </>
   )
 }

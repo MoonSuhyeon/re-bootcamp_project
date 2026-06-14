@@ -1,5 +1,6 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { Noto_Sans_KR } from 'next/font/google'
+import GlobalChrome from '@/components/layout/GlobalChrome'
 import './globals.css'
 
 const notoSansKR = Noto_Sans_KR({
@@ -9,8 +10,8 @@ const notoSansKR = Noto_Sans_KR({
 })
 
 export const metadata: Metadata = {
-  title: 'AX풀뱅크',
-  description: 'AX풀뱅크 - AI 차세대 인터넷뱅크',
+  title: 'AXful Bank',
+  description: 'AXful Bank - AI 차세대 인터넷뱅크',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko" className={notoSansKR.className}>
       <body className="min-h-screen bg-white">
         {children}
+        <GlobalChrome />
       </body>
     </html>
   )
