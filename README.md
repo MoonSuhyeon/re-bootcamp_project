@@ -67,19 +67,20 @@ flowchart LR
 
 | 감사 — 전체 | 리스크 — PII 마스킹 | 창구 — 조회사유 | 감사로그 |
 |---|---|---|---|
-| ![full](docs/demo/rbac_1_audit_full.png) | ![masked](docs/demo/rbac_2_risk_masked.png) | ![reason](docs/demo/rbac_3_reason_modal.png) | ![audit](docs/demo/rbac_4_audit_log.png) |
+| ![full](docs/demo/rbac/rbac_1_audit_full.png) | ![masked](docs/demo/rbac/rbac_2_risk_masked.png) | ![reason](docs/demo/rbac/rbac_3_reason_modal.png) | ![audit](docs/demo/rbac/rbac_4_audit_log.png) |
 
 - **감사(COMPLIANCE)** → 연락처·이메일 전체 (`010-1015-2015` / `minjun.kim2@example.com`)
 - **리스크(HQ_RISK)** → 자동 마스킹 (`010-****-2015` / `m****@example.com`) + "🔒 PII 마스킹" 배너
 - **창구(TELLER)** → 연락처 열람 시 **조회 사유 입력 필수** → *누가·언제·무엇을·왜* 봤는지 `customer_access_log`에 기록
-- 전체 흐름 영상 + **장면별 설명**: [`docs/demo/`](docs/demo/) (영상 `rbac_demo.webm` + 무엇을 보는지 설명)
+- 전체 흐름 영상 + **장면별 설명**: [`docs/demo/rbac/`](docs/demo/rbac/) (영상 `rbac_demo.webm` + 무엇을 보는지 설명)
 
 > 역할은 게이트웨이가 JWT에서 추출·전파한 `X-User-Role` 기반. **"신원 → 권한 → 감사"가 한 화면에서 증명**된다.
 
 ### 이상거래 조사 AI 에이전트
 
 가설 경합 → 도구 선택(이유) → 재계획 → 권고(HITL)의 추론 루프 + 어드민 콘솔 연동.
-CLI 트레이스·콘솔 스크린샷·영상은 → [`agent/README.md`](agent/README.md)
+- 전체 흐름 영상 + **장면별 설명**: [`docs/demo/agent/`](docs/demo/agent/) (영상 `fraud_agent_demo.webm` + 콘솔 스크린샷)
+- CLI 추론 트레이스(텍스트)·설계: [`agent/README.md`](agent/README.md)
 
 ---
 

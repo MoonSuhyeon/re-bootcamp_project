@@ -23,4 +23,4 @@
 - 민감정보 접근은 **`customer_access_log`에 영구 기록** ("모든 조회 이력은 영구 적재됩니다").
 - 역할은 게이트웨이가 **JWT에서 추출·전파한 `X-User-Role`** 기반.
 
-설계·코드 맥락: 최상위 [`README.md`](../../README.md) "🎬 데모" · [`docs/customer-auth-architecture.md`](../customer-auth-architecture.md)
+설계·코드 맥락: 최상위 [`README.md`](../../../README.md) "🎬 데모" · [`docs/customer-auth-architecture.md`](../../customer-auth-architecture.md)
