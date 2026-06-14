@@ -69,7 +69,7 @@ flowchart LR
 - **감사(COMPLIANCE)** → 연락처·이메일 전체 (`010-1015-2015` / `minjun.kim2@example.com`)
 - **리스크(HQ_RISK)** → 자동 마스킹 (`010-****-2015` / `m****@example.com`) + "🔒 PII 마스킹" 배너
 - **창구(TELLER)** → 연락처 열람 시 **조회 사유 입력 필수** → *누가·언제·무엇을·왜* 봤는지 `customer_access_log`에 기록
-- 전체 흐름 영상: [`docs/demo/rbac_demo.webm`](docs/demo/rbac_demo.webm)
+- 전체 흐름 영상 + **장면별 설명**: [`docs/demo/`](docs/demo/) (영상 `rbac_demo.webm` + 무엇을 보는지 설명)
 
 > 역할은 게이트웨이가 JWT에서 추출·전파한 `X-User-Role` 기반. **"신원 → 권한 → 감사"가 한 화면에서 증명**된다.
 
