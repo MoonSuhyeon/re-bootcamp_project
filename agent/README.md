@@ -190,7 +190,9 @@ python scripts/serve.py                  # 기본 0.0.0.0:8090 (FRAUD_AGENT_PORT
 
 - **계정탈취**: `get_auth_events`가 **실 customer-service(:8081)** 호출 → `● 실연결` 배지 + 인증실패 7회 → H2 확정
 - **사망**: `get_party` 사망 확인 → 즉시 fail-closed, 헤드라인 "사망계좌 · 권리자 적격성(L4)"
-- **전체 흐름 영상 + 장면별 설명**: [`../docs/demo/agent/`](../docs/demo/agent/) (영상 `fraud_agent_demo.webm` + 4개 사건 각각 무엇을 보는지 설명)
+- **전체 흐름은 아래 GIF + 장면별 설명**: [`../docs/demo/agent/`](../docs/demo/agent/)
+
+![이상거래 조사 에이전트 콘솔 데모](../docs/demo/agent/fraud_agent_demo.gif)
 
 ## 기술 스택
 

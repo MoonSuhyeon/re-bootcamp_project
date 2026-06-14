@@ -1,8 +1,10 @@
 # 데모 영상 — 이상거래 조사 에이전트 콘솔
 
-**파일**: [`fraud_agent_demo.webm`](fraud_agent_demo.webm) (약 27초) · 스크린샷: `console_*.png`
+**데모** (약 27초) · 스크린샷: `console_*.png`
 
-> ⚠️ GitHub 마크다운에선 `.webm`이 자동재생되지 않습니다. 파일을 내려받아 재생하거나, 아래 **장면 설명 + 스크린샷**으로 내용을 파악하세요.
+![이상거래 조사 에이전트 콘솔 데모](fraud_agent_demo.gif)
+
+> 위 GIF로 바로 재생됩니다. 고화질 원본은 [`fraud_agent_demo.webm`](fraud_agent_demo.webm)을 내려받아 보세요. 아래는 **장면 설명 + 스크린샷**.
 
 ## 무엇을 보여주나
 
